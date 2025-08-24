@@ -140,6 +140,8 @@ app.layout = html.Div([
 	html.H2("Live Stock Data Graph"),
 	dcc.Interval(id='interval', interval=100, n_intervals=0),
 	dcc.Dropdown(id='fields-dropdown', multi=True, placeholder="Select fields to display"),
+	html.Button('Clear data', id='clear-button', n_clicks=0, style={'margin':'8px'}),
+	html.Div(id='clear-output', style={'color': 'green', 'marginBottom': '8px'}),
 	dcc.Graph(id='live-graph'),
 ])
 
@@ -237,6 +239,25 @@ def update_graph(selected_fields, n):
 			yaxis2=dict(title='Value (y2)', overlaying='y', side='right', showgrid=False)
 		)
 	return fig
+
+
+@app.callback(
+	Output('clear-output', 'children'),
+	Input('clear-button', 'n_clicks')
+)
+def clear_data(n_clicks):
+	"""Clear in-memory stored points and seen keys when the button is clicked.
+
+	Note: this clears only the in-process memory (MEMORY_POINTS and SEEN_KEYS).
+	It does not delete keys from Redis. This keeps the web UI responsive and
+	avoids destructive remote operations.
+	"""
+	if not n_clicks:
+		return ''
+	with MEM_LOCK:
+		MEMORY_POINTS.clear()
+		SEEN_KEYS.clear()
+	return f"Cleared in-memory data ({len(MEMORY_POINTS)} points remain)."
 
 if __name__ == "__main__":
 	app.run(debug=True, port=8051)
