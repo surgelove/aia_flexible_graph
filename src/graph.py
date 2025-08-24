@@ -137,13 +137,21 @@ def get_numeric_fields_union(data_points):
 app = dash.Dash(__name__)
 
 app.layout = html.Div([
-	html.H2("Live Stock Data Graph"),
-	dcc.Interval(id='interval', interval=100, n_intervals=0),
-	dcc.Dropdown(id='fields-dropdown', multi=True, placeholder="Select fields to display"),
-	html.Button('Clear data', id='clear-button', n_clicks=0, style={'margin':'8px'}),
-	html.Div(id='clear-output', style={'color': 'green', 'marginBottom': '8px'}),
-	dcc.Graph(id='live-graph'),
-])
+	# Header / controls area (fixed height)
+	html.Div([
+		html.H2("Live Stock Data Graph", style={'margin': 0}),
+		dcc.Interval(id='interval', interval=100, n_intervals=0),
+		dcc.Dropdown(id='fields-dropdown', multi=True, placeholder="Select fields to display", style={'minWidth': '200px', 'maxWidth': '480px'}),
+		html.Button('Clear data', id='clear-button', n_clicks=0, style={'margin':'8px'}),
+		html.Div(id='clear-output', style={'color': 'green', 'marginBottom': '8px'}),
+	], style={'padding': '8px', 'flex': '0 0 auto', 'display': 'flex', 'alignItems': 'center', 'gap': '12px'}),
+
+	# Graph area fills remaining viewport height
+	html.Div([
+		dcc.Graph(id='live-graph', style={'height': '100%', 'width': '100%'}),
+	], style={'flex': '1 1 auto', 'minHeight': 0}),
+
+], style={'display': 'flex', 'flexDirection': 'column', 'height': '100vh'})
 
 @app.callback(
 	Output('fields-dropdown', 'options'),
@@ -229,14 +237,20 @@ def update_graph(selected_fields, n):
 		if isinstance(line_cfg, dict):
 			trace_kwargs['line'] = line_cfg
 		fig.add_trace(go.Scatter(**trace_kwargs))
-	# Base layout
-	fig.update_layout(xaxis_title='Timestamp', yaxis_title='Value', legend_title='Fields')
+	# Base layout: put legend at the bottom as a horizontal bar and reserve space
+	fig.update_layout(
+		xaxis_title=None,
+		yaxis_title=None,
+		legend_title=None,
+		legend=dict(orientation='h', y=-0.15, x=0.5, xanchor='center'),
+		margin=dict(l=40, r=40, t=40, b=80)
+	)
 	# Force hover popup to be white background with black text
 	fig.update_layout(hoverlabel=dict(bgcolor='white', font=dict(color='black')))
 	# Configure secondary y-axis if any selected field uses y2
 	if any(AXES_MAP.get(f) == 'y2' for f in selected_fields):
 		fig.update_layout(
-			yaxis2=dict(title='Value (y2)', overlaying='y', side='right', showgrid=False)
+			yaxis2=dict(title=None, overlaying='y', side='right', showgrid=False)
 		)
 	return fig
 
