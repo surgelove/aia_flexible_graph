@@ -10,6 +10,9 @@ import math
 
 # Configurable send interval (seconds)
 INTERVAL = 0.2
+# Number of seconds between successive data point timestamps
+# Used for historical/scenario timestamp spacing (can be integer or float)
+SECONDS_APPART = 5
 
 @dataclass
 class DataPoint:
@@ -146,8 +149,8 @@ class StockDataTester:
         print(f"📈 Sending {num_points} historical data points...")
         
         for i in range(num_points):
-            # Create timestamps going back in time
-            timestamp_offset = datetime.timedelta(seconds=(num_points - i) * INTERVAL)
+            # Create timestamps going back in time; spacing controlled by SECONDS_APPART
+            timestamp_offset = datetime.timedelta(seconds=(num_points - i) * SECONDS_APPART)
             historical_time = datetime.datetime.now() - timestamp_offset
             
             data_point = self.generator.generate_data_point()
@@ -164,10 +167,15 @@ class StockDataTester:
             interval = INTERVAL
         print(f"🔴 Starting live data stream (interval: {interval}s)")
         self.running = True
-        
+        # Maintain a logical timestamp that starts at now and advances by SECONDS_APPART
         def stream_data():
+            last_ts = datetime.datetime.now()
+            delta = datetime.timedelta(seconds=SECONDS_APPART)
             while self.running:
                 data_point = self.generator.generate_data_point()
+                # assign the logical timestamp (may be ahead of wall-clock if SECONDS_APPART > INTERVAL)
+                data_point.timestamp = last_ts
+                last_ts = last_ts + delta
                 self.send_data_point(data_point)
                 time.sleep(interval)
         
@@ -284,7 +292,8 @@ def run_signal_focused_test():
         # Override the generator's price
         tester.generator.base_price = price
         data_point = tester.generator.generate_data_point()
-        data_point.timestamp = base_time + datetime.timedelta(seconds=i * 5)
+        # Space scenario timestamps by SECONDS_APPART so tests are configurable
+        data_point.timestamp = base_time + datetime.timedelta(seconds=i * SECONDS_APPART)
         
         tester.send_data_point(data_point)
         time.sleep(INTERVAL)
