@@ -1,0 +1,7 @@
+{
+    "fields": [
+        "timestamp",
+        "price",
+        "description"
+    ]
+}

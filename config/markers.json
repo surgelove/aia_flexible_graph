@@ -1,0 +1,22 @@
+{
+  "-price": {
+    "symbol": "square",
+    "size": 10,
+    "color": "red"
+  },
+  "price": {
+    "symbol": "square",
+    "size": 12,
+    "color": "rgba(255,0,0,0)",
+
+    "line": {
+      "color": "blue",
+      "width": 2
+    }
+  },
+    "caca": {
+    "symbol": "circle",
+    "size": 2,
+    "color": "black"
+  }
+}

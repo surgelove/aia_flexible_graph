@@ -1,0 +1,22 @@
+{
+  "price": {
+    "width": 2,
+    "dash": null,
+    "color": "gray"
+  },
+  "spread_pips": {
+    "width": 0.5,
+    "dash": "dot",
+    "color": "black"
+  },
+  "ask": {
+    "width": 1,
+    "dash": null,
+    "color": "green"
+  },
+  "bid": {
+    "width": 1,
+    "dash": null,
+    "color": "red"
+  }
+}
