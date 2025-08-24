@@ -139,7 +139,7 @@ app = dash.Dash(__name__)
 app.layout = html.Div([
 	# Header / controls area (fixed height)
 	html.Div([
-		html.H2("Live Stock Data Graph", style={'margin': 0}),
+		html.H2("Flexible Graph", style={'margin': 0}),
 		dcc.Interval(id='interval', interval=100, n_intervals=0),
 		dcc.Dropdown(id='fields-dropdown', multi=True, placeholder="Select fields to display", style={'minWidth': '200px', 'maxWidth': '480px'}),
 		html.Button('Clear data', id='clear-button', n_clicks=0, style={'margin':'8px'}),
