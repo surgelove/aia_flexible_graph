@@ -142,8 +142,17 @@ app.layout = html.Div([
 		html.H2("Flexible Graph", style={'margin': 0}),
 		dcc.Interval(id='interval', interval=100, n_intervals=0),
 		dcc.Dropdown(id='fields-dropdown', multi=True, placeholder="Select fields to display", style={'minWidth': '200px', 'maxWidth': '480px'}),
+		# Display-window controls: choose a minutes window to display (does not delete data)
+		html.Div([
+			html.Label('Show last (minutes):', style={'marginRight': '6px'}),
+			dcc.Input(id='minutes-input', type='number', min=0, value=0, placeholder='0 = all', style={'width': '100px'}),
+			html.Button('Apply', id='apply-window-button', n_clicks=0, style={'marginLeft': '6px'}),
+		], style={'display': 'flex', 'alignItems': 'center'}),
+		# hidden store to keep the currently applied display window in minutes
+		dcc.Store(id='display-window-store', data=0),
 		html.Button('Clear data', id='clear-button', n_clicks=0, style={'margin':'8px'}),
 		html.Div(id='clear-output', style={'color': 'green', 'marginBottom': '8px'}),
+		html.Div(id='display-window-output', style={'color': 'blue', 'marginBottom': '8px'}),
 	], style={'padding': '8px', 'flex': '0 0 auto', 'display': 'flex', 'alignItems': 'center', 'gap': '12px'}),
 
 	# Graph area fills remaining viewport height
@@ -172,17 +181,53 @@ def update_fields(n, current_value):
 	# Default to all available numeric fields on first load
 	return options, fields
 
+
+@app.callback(
+	Output('display-window-store', 'data'),
+	Output('display-window-output', 'children'),
+	Input('apply-window-button', 'n_clicks'),
+	State('minutes-input', 'value')
+)
+def apply_display_window(n_clicks, minutes_value):
+	"""Save the chosen display window in minutes into the Store and return a message.
+
+	This only affects what is shown in the graph; no data is deleted.
+	"""
+	if not n_clicks:
+		# no change
+		return dash.no_update, ''
+	try:
+		minutes = float(minutes_value) if minutes_value is not None else 0
+	except Exception:
+		return dash.no_update, 'Invalid minutes value'
+	if minutes <= 0:
+		return 0, 'Display window cleared (showing all data)'
+	return minutes, f'Showing last {minutes:.1f} minutes (display-only)'
+
 @app.callback(
 	Output('live-graph', 'figure'),
 	Input('fields-dropdown', 'value'),
-	Input('interval', 'n_intervals')
+	Input('interval', 'n_intervals'),
+	State('display-window-store', 'data')
 )
-def update_graph(selected_fields, n):
+def update_graph(selected_fields, n, display_minutes):
 	# remove epoch_ms from selected fields
 	if not selected_fields:
 		return go.Figure()
 	selected_fields = [f for f in selected_fields if f != '_epoch_ms']
 	data_points = fetch_data()
+	# Apply display-only time window if configured (do not modify MEMORY_POINTS)
+	try:
+		disp_minutes = float(display_minutes) if display_minutes is not None else 0
+	except Exception:
+		disp_minutes = 0
+	if disp_minutes > 0 and data_points:
+		# Use the latest received timestamp as the reference point so the
+		# displayed "last N minutes" window is relative to the newest data
+		latest_ts = max((dp.get('timestamp') for dp in data_points if isinstance(dp.get('timestamp'), datetime.datetime)), default=None)
+		if latest_ts is not None:
+			cutoff = latest_ts - datetime.timedelta(minutes=disp_minutes)
+			data_points = [dp for dp in data_points if isinstance(dp.get('timestamp'), datetime.datetime) and dp['timestamp'] >= cutoff]
 	if not data_points or not selected_fields:
 		return go.Figure()
 	timestamps = [dp['timestamp'] for dp in data_points]
