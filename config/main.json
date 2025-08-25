@@ -1,0 +1,5 @@
+{
+  "redis_key_pattern": "price_data:*:*",
+  "app_port": 8051,
+  "redis_port": 6379
+}

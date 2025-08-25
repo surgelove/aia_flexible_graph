@@ -11,8 +11,42 @@ from threading import Lock
 import textwrap
 from html import escape as html_escape
 
+# Resolve config directory at repo root (../config relative to this file)
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+_CONFIG_DIR = os.path.join(os.path.dirname(_THIS_DIR), 'config')
+
+# Small helper to build config file paths
+def _cfg(name: str) -> str:
+    return os.path.join(_CONFIG_DIR, name)
+
+# Load main configuration once at startup
+MAIN_CONFIG = {}
+try:
+	with open(_cfg('main.json'), 'r', encoding='utf-8') as f:
+		_main_data = json.load(f)
+		if isinstance(_main_data, dict):
+			MAIN_CONFIG = _main_data
+except Exception:
+	MAIN_CONFIG = {}
+
+# Configuration with fallback defaults
+REDIS_KEY_PATTERN = MAIN_CONFIG.get('redis_key_pattern', 'price_data:*:*')
+APP_PORT = MAIN_CONFIG.get('app_port', 8051)
+REDIS_PORT = MAIN_CONFIG.get('redis_port', 6379)
+
+# Helper function to build instrument-specific key prefix from pattern
+def get_instrument_key_prefix(instrument: str) -> str:
+	# Extract the prefix pattern (everything before the first *)
+	# For pattern "price_data:*:*", this gives us "price_data:{instrument}:"
+	pattern_parts = REDIS_KEY_PATTERN.split('*')
+	if len(pattern_parts) >= 2:
+		prefix = pattern_parts[0] + instrument + ':'
+		return prefix
+	# Fallback if pattern is malformed
+	return f"price_data:{instrument}:"
+
 # Redis connection
-redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+redis_client = redis.Redis(host='localhost', port=REDIS_PORT, db=0, decode_responses=True)
 
 # In-memory history to keep received data beyond Redis TTL per instrument
 MEMORY_POINTS = {}  # dict[str, list[dict]] - keyed by instrument
@@ -22,14 +56,6 @@ MAX_POINTS = 10000  # cap history to prevent unbounded growth per instrument
 
 # Store to track current instruments and prevent unnecessary layout updates
 CURRENT_INSTRUMENTS = set()
-
-# Resolve config directory at repo root (../config relative to this file)
-_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-_CONFIG_DIR = os.path.join(os.path.dirname(_THIS_DIR), 'config')
-
-# Small helper to build config file paths
-def _cfg(name: str) -> str:
-    return os.path.join(_CONFIG_DIR, name)
 
 # Load axes configuration once at startup
 AXES_MAP = {}
@@ -91,7 +117,7 @@ except Exception:
 	TOOLTIP_FIELDS = []
 
 def fetch_data():
-	keys = redis_client.keys("price_data:*:*")
+	keys = redis_client.keys(REDIS_KEY_PATTERN)
 	# Only fetch new keys to avoid re-adding duplicates
 	new_keys = [k for k in keys if k not in SEEN_KEYS]
 	for key in new_keys:
@@ -100,13 +126,27 @@ def fetch_data():
 			SEEN_KEYS.add(key)
 			continue
 		try:
-			# Extract instrument from key: price_data:INSTRUMENT:timestamp
-			key_parts = key.split(':')
-			if len(key_parts) >= 3:
-				instrument = key_parts[1]
+			# Extract instrument from key using the configured pattern
+			# For pattern "price_data:*:*", split by ':' and take the second part
+			pattern_parts = REDIS_KEY_PATTERN.split('*')
+			if len(pattern_parts) >= 2:
+				prefix = pattern_parts[0]
+				# Remove prefix and split to get instrument
+				key_without_prefix = key[len(prefix):]
+				instrument_and_rest = key_without_prefix.split(':', 1)
+				if instrument_and_rest:
+					instrument = instrument_and_rest[0]
+				else:
+					SEEN_KEYS.add(key)
+					continue
 			else:
-				SEEN_KEYS.add(key)
-				continue
+				# Fallback for malformed pattern - assume price_data:INSTRUMENT:timestamp
+				key_parts = key.split(':')
+				if len(key_parts) >= 3:
+					instrument = key_parts[1]
+				else:
+					SEEN_KEYS.add(key)
+					continue
 			
 			dp = json.loads(raw)
 			# Parse timestamp: prefer ISO formats (with 'T' and optional timezone),
@@ -431,7 +471,7 @@ def update_graph(selected_fields, n, paused, display_minutes, pause_ref_iso, com
 		fig.add_trace(go.Scatter(**trace_kwargs))
 	
 	fig.update_layout(
-		title=f"{instrument}",
+		title=None,
 		xaxis_title=None,
 		yaxis_title=None,
 		legend_title=None,
@@ -462,11 +502,11 @@ def clear_data(n_clicks, component_id):
 	with MEM_LOCK:
 		if instrument in MEMORY_POINTS:
 			del MEMORY_POINTS[instrument]
-		# Remove keys for this instrument from SEEN_KEYS
-		keys_to_remove = {k for k in SEEN_KEYS if k.startswith(f"price_data:{instrument}:")}
+		# Remove keys for this instrument from SEEN_KEYS using configurable pattern
+		instrument_prefix = get_instrument_key_prefix(instrument)
+		keys_to_remove = {k for k in SEEN_KEYS if k.startswith(instrument_prefix)}
 		SEEN_KEYS.difference_update(keys_to_remove)
 	return dash.no_update
 
 if __name__ == "__main__":
-	app.run(debug=True, port=8051)
-	app.run(debug=True, port=8051)
+	app.run(debug=True, port=APP_PORT)
