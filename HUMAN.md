@@ -1,6 +1,6 @@
 # Human notes
 
-This application is part of Aia, our automated trading assistante decentralized system. We do not request any help for now.
+This application is part of Aia, our automated trading assistante decentralized system. Most of it was developed in a few hours using Github Copilot with GPT-5 Mini and Claude Sonnet 4. We do not request any help for now.
 
 This application, running on ```localhost:app_port``` will display any number of instruments received from a redis stream running on ```redis_port``` with the pattern ```redis_key_pattern```, from the file ```config/main.json```
 
@@ -106,6 +106,17 @@ Use the scripts to make sure redis is started, test it or stop it. It uses port 
 ./scripts/start_redis.sh 6379
 ./scripts/stop_redis.sh
 ./scripts/test_redis.sh
+```
+
+You can test the sending of data to the redis stream by running either 
+
+```
+python3 test/test_graph.py
+``` 
+and 
+
+```
+python3 test/test_graph_manual.py
 ```
 
 
