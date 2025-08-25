@@ -1,5 +1,10 @@
 {
   "price": {
+    "width": 2,
+    "dash": null,
+    "color": "lightgray"
+  },
+  "spread_pips": {
     "width": 1,
     "dash": null,
     "color": "lightgray"

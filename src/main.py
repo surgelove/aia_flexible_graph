@@ -98,11 +98,21 @@ def fetch_data():
 			continue
 		try:
 			dp = json.loads(raw)
-			# Parse timestamp (accept with or without milliseconds)
-			try:
-				dp['timestamp'] = datetime.datetime.strptime(dp['timestamp'], '%Y-%m-%d %H:%M:%S.%f')
-			except ValueError:
-				dp['timestamp'] = datetime.datetime.strptime(dp['timestamp'], '%Y-%m-%d %H:%M:%S')
+			# Parse timestamp: prefer ISO formats (with 'T' and optional timezone),
+			# fall back to older space-separated formats.
+			ts_raw = dp.get('timestamp')
+			if isinstance(ts_raw, str):
+				# try ISO first (handles '2025-08-25T11:52:32.755024' and offsets)
+				try:
+					dp['timestamp'] = datetime.datetime.fromisoformat(ts_raw)
+				except Exception:
+					try:
+						dp['timestamp'] = datetime.datetime.strptime(ts_raw, '%Y-%m-%d %H:%M:%S.%f')
+					except Exception:
+						dp['timestamp'] = datetime.datetime.strptime(ts_raw, '%Y-%m-%d %H:%M:%S')
+			else:
+				# leave as-is (later checks will ignore non-datetime entries)
+				pass
 			# Extract numeric epoch from key suffix to use as a stable secondary sort key
 			try:
 				dp['_epoch_ms'] = int(key.rsplit(':', 1)[-1])

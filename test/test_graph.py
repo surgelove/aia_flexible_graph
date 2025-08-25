@@ -9,7 +9,7 @@ import random
 import math
 
 # Configurable send interval (seconds)
-INTERVAL = 0.2
+INTERVAL = 1
 # Number of seconds between successive data point timestamps
 # Used for historical/scenario timestamp spacing (can be integer or float)
 SECONDS_APPART = 5
@@ -87,6 +87,9 @@ class StockDataGenerator:
         elif signal == "BEARISH_CROSS":
             description = f"🔴 BEARISH SIGNAL: EMA-{self.ema_short_period} crossed below EMA-{self.ema_long_period}. Price: {price:.4f}, Short EMA: {self.ema_short:.4f}, Long EMA: {self.ema_long:.4f}"
         
+        print(datetime.datetime.now())
+
+
         return DataPoint(
             timestamp=datetime.datetime.now(),
             price=price,
@@ -95,7 +98,7 @@ class StockDataGenerator:
             signal=signal,
             description=description
         )
-
+        
 class StockDataTester:
     def __init__(self, redis_host='localhost', redis_port=6379, redis_db=0):
         self.redis_client = redis.Redis(host=redis_host, port=redis_port, db=redis_db, decode_responses=True)
