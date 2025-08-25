@@ -265,7 +265,7 @@ def update_graph(selected_fields, n, display_minutes):
 		values = [dp.get(field) for dp in data_points]
 		# Assign to secondary y-axis if configured
 		yaxis_ref = 'y2' if AXES_MAP.get(field) == 'y2' else 'y'
-		mode = MODES_MAP.get(field, 'lines+markers')
+		mode = MODES_MAP.get(field, 'lines')
 		marker_cfg = MARKERS_MAP.get(field)
 		line_cfg = LINES_MAP.get(field)
 		trace_kwargs = dict(

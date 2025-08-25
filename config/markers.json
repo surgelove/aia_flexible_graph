@@ -5,8 +5,8 @@
     "color": "red"
   },
   "price": {
-    "symbol": "square",
-    "size": 12,
+    "symbol": "circle",
+    "size": 4,
     "color": "rgba(255,0,0,0)",
 
     "line": {

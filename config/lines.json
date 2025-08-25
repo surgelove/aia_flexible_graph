@@ -1,22 +1,22 @@
 {
   "price": {
-    "width": 2,
+    "width": 1,
     "dash": null,
-    "color": "gray"
+    "color": "lightgray"
   },
-  "spread_pips": {
+  "ema_short": {
     "width": 0.5,
-    "dash": "dot",
-    "color": "black"
+    "dash": null,
+    "color": "blue"
   },
-  "ask": {
+  "ema_long": {
     "width": 1,
     "dash": null,
-    "color": "green"
+    "color": "purple"
   },
-  "bid": {
+  "random_0_5": {
     "width": 1,
     "dash": null,
-    "color": "red"
+    "color": "pink"
   }
 }
