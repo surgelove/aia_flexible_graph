@@ -2,6 +2,9 @@
 
 A flexible, config-driven Dash application for visualizing live multi-instrument data from Redis with dynamic layouts, selectable fields, dual y-axes, and customizable styling.
 
+![AIA Flexible Graph](images/FlexibleGraphExample.png
+)
+
 ## Overview
 
 This application automatically discovers and displays data for multiple instruments from Redis, creating a separate graph section for each instrument. The app:
