@@ -142,7 +142,7 @@ app.layout = html.Div([
 	# Header / controls area (fixed height)
 	html.Div([
 		html.H2("Flexible Graph", style={'margin': 0, 'fontSize': '16px'}),
-		dcc.Interval(id='interval', interval=100, n_intervals=0),
+		dcc.Interval(id='interval', interval=500, n_intervals=0),
 		# fields-dropdown moved below to occupy full width above the graph
 		# Display-window controls: choose a minutes window to display (does not delete data)
 		html.Div([
