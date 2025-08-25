@@ -369,7 +369,12 @@ def update_graph(selected_fields, n, paused, display_minutes, pause_ref_iso):
 		# place legend above the plot, centered
 		legend=dict(orientation='h', y=1.02, yanchor='bottom', x=0.5, xanchor='center'),
 		# increase top margin to accommodate legend and reduce bottom margin
-		margin=dict(l=40, r=40, t=100, b=40)
+		margin=dict(l=40, r=40, t=100, b=40),
+		# ensure the plot background is clean (white) and gridlines are subtle
+		paper_bgcolor='white',
+		plot_bgcolor='white',
+		xaxis=dict(showgrid=True, gridcolor='lightgray', zeroline=False, showline=False),
+		yaxis=dict(showgrid=True, gridcolor='lightgray', zeroline=False, showline=False),
 	)
 	# Force hover popup to be white background with black text
 	fig.update_layout(hoverlabel=dict(bgcolor='white', font=dict(color='black')))
