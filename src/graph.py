@@ -141,7 +141,7 @@ app.layout = html.Div([
 	html.Div([
 		html.H2("Flexible Graph", style={'margin': 0}),
 		dcc.Interval(id='interval', interval=100, n_intervals=0),
-		dcc.Dropdown(id='fields-dropdown', multi=True, placeholder="Select fields to display", style={'minWidth': '200px', 'maxWidth': '480px'}),
+		# fields-dropdown moved below to occupy full width above the graph
 		# Display-window controls: choose a minutes window to display (does not delete data)
 		html.Div([
 			html.Label('Show last (minutes):', style={'marginRight': '6px'}),
@@ -163,6 +163,16 @@ app.layout = html.Div([
 		html.Div(id='display-window-output', style={'color': 'blue', 'marginBottom': '8px'}),
 		html.Div(id='pause-output', style={'color': 'purple', 'marginBottom': '8px'}),
 	], style={'padding': '8px', 'flex': '0 0 auto', 'display': 'flex', 'alignItems': 'center', 'gap': '12px'}),
+
+	# Fields selector full-width section directly above the graph
+	html.Div([
+		dcc.Dropdown(
+			id='fields-dropdown',
+			multi=True,
+			placeholder='Select fields to display',
+			style={'width': '100%', 'fontSize': '12px'}
+		),
+	], style={'padding': '6px 12px', 'flex': '0 0 auto', 'width': '97%'}),
 
 	# Graph area fills remaining viewport height
 	html.Div([
