@@ -201,14 +201,14 @@ def create_instrument_section(instrument):
 				placeholder=f'Select fields for {instrument}',
 				style={'width': '100%', 'fontSize': '12px'}
 			),
-		], style={'padding': '6px 12px', 'flex': '0 0 auto', 'width': '97%'}),
+		], style={'padding': '2px 2px', 'flex': '0 0 auto', 'width': '100%'}),
 
 		# Graph for this instrument
 		html.Div([
-			dcc.Graph(id={'type': 'graph', 'instrument': instrument}, style={'height': '400px', 'width': '100%'}),
-		], style={'flex': '1 1 auto', 'minHeight': 0, 'marginBottom': '20px'}),
+			dcc.Graph(id={'type': 'graph', 'instrument': instrument}, style={'height': '100%', 'width': '100%'}),
+		], style={'flex': '1 1 auto', 'minHeight': 0, 'marginBottom': '0px', 'padding': '0px'}),
 
-	], style={'marginBottom': '30px', 'border': '1px solid #eee', 'borderRadius': '5px'})
+	], style={'height': '100vh', 'display': 'flex', 'flexDirection': 'column', 'marginBottom': '0'})
 
 app = dash.Dash(__name__)
 
@@ -219,12 +219,12 @@ app.layout = html.Div([
 	html.Div([
 		html.H2("Flexible Graph - Multi Instrument", style={'margin': 0, 'fontSize': '20px', 'textAlign': 'center'}),
 		dcc.Interval(id='interval', interval=500, n_intervals=0),
-	], style={'padding': '12px', 'backgroundColor': '#f8f9fa', 'borderBottom': '2px solid #dee2e6', 'marginBottom': '20px'}),
+	], style={'padding': '12px', 'backgroundColor': '#f8f9fa', 'borderBottom': '2px solid #dee2e6'}),
 
 	# Container for all instrument sections
 	html.Div(id='instruments-container', children=[]),
 
-], style={'fontFamily': _FONT_STACK, 'padding': '0', 'margin': '0'})
+], style={'fontFamily': _FONT_STACK, 'padding': '0', 'margin': '0', 'height': '100vh', 'display': 'flex', 'flexDirection': 'column'})
 
 # Callback to dynamically create instrument sections
 @app.callback(
@@ -441,7 +441,6 @@ def update_graph(selected_fields, n, paused, display_minutes, pause_ref_iso, com
 		plot_bgcolor='white',
 		xaxis=dict(showgrid=True, gridcolor='lightgray', zeroline=False, showline=False),
 		yaxis=dict(showgrid=True, gridcolor='lightgray', zeroline=False, showline=False),
-		height=400
 	)
 	fig.update_layout(hoverlabel=dict(bgcolor='white', font=dict(color='black')))
 	
@@ -469,4 +468,5 @@ def clear_data(n_clicks, component_id):
 	return dash.no_update
 
 if __name__ == "__main__":
+	app.run(debug=True, port=8051)
 	app.run(debug=True, port=8051)
