@@ -19,6 +19,7 @@ Date: 2025
 import json
 import datetime
 import os
+import hashlib
 from threading import Lock
 import textwrap
 from html import escape as html_escape
@@ -91,6 +92,40 @@ def get_instrument_key_prefix(instrument: str) -> str:
 	# Fallback if pattern is malformed
 	return f"price_data:{instrument}:"
 
+
+def get_data_hash(data_points, selected_fields):
+	"""
+	Create a hash of the relevant data to detect meaningful changes.
+	
+	This helps avoid unnecessary graph updates when data hasn't actually changed
+	for the selected fields.
+	
+	Args:
+		data_points (List[dict]): Data points for an instrument
+		selected_fields (List[str]): Currently selected fields
+		
+	Returns:
+		str: Hash string representing the current data state
+	"""
+	if not data_points or not selected_fields:
+		return ""
+	
+	# Create a simplified representation of the data for hashing
+	# Include timestamps and values for selected fields only
+	hash_data = []
+	for dp in data_points[-100:]:  # Only consider last 100 points for performance
+		point_data = {}
+		for field in selected_fields:
+			if field in dp:
+				point_data[field] = dp[field]
+		if 'timestamp' in dp:
+			point_data['timestamp'] = str(dp['timestamp'])
+		hash_data.append(point_data)
+	
+	# Create hash from the simplified data
+	data_str = json.dumps(hash_data, sort_keys=True, default=str)
+	return hashlib.md5(data_str.encode()).hexdigest()
+
 # Redis connection
 redis_client = redis.Redis(host='localhost', port=REDIS_PORT, db=0, decode_responses=True)
 
@@ -104,6 +139,9 @@ MAX_POINTS = 10000  # Maximum data points per instrument to prevent unbounded me
 # UI state tracking
 # Store to track current instruments and prevent unnecessary layout updates
 CURRENT_INSTRUMENTS = set()  # Set[str] - currently displayed instrument names
+
+# Data change tracking to reduce unnecessary graph updates
+LAST_DATA_HASH = {}  # Dict[str, str] - tracks data hash per instrument to detect changes
 
 # Configuration loading section
 # Load all configuration files once at startup with error handling
@@ -401,9 +439,39 @@ _FONT_STACK = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica
 app.layout = html.Div([
 	# Application header
 	html.Div([
-		html.H2("Flexible Graph - Multi Instrument", style={'margin': 0, 'fontSize': '20px', 'textAlign': 'center'}),
-		# Interval component for automatic data refresh (500ms polling)
-		dcc.Interval(id='interval', interval=500, n_intervals=0),
+		# Title and global controls row
+		html.Div([
+			html.H2("Flexible Graph - Multi Instrument", style={'margin': 0, 'fontSize': '20px', 'flex': '1'}),
+			# Global clear all button
+			html.Button(
+				'Clear All Data', 
+				id='clear-all-button', 
+				n_clicks=0, 
+				style={
+					'backgroundColor': '#dc3545', 
+					'color': 'white', 
+					'border': 'none', 
+					'padding': '8px 16px', 
+					'borderRadius': '4px',
+					'cursor': 'pointer',
+					'fontSize': '14px',
+					'fontWeight': 'bold',
+					'transition': 'background-color 0.2s'
+				},
+				title='Clear all cached data from all instruments'
+			),
+		], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between', 'marginBottom': '8px'}),
+		
+		# Status output for global clear operation
+		html.Div(id='clear-all-output', style={'color': 'green', 'fontSize': '12px', 'textAlign': 'center'}),
+		
+		# Timer interval for auto-clearing status messages
+		dcc.Interval(id='status-clear-timer', interval=3000, n_intervals=0, disabled=True),
+		
+		# Interval component for automatic data refresh (2 second polling to reduce flashing)
+		dcc.Interval(id='interval', interval=2000, n_intervals=0),
+		# Store to track page session for refresh detection
+		dcc.Store(id='page-session', data={'loaded': True}),
 	], style={'padding': '12px', 'backgroundColor': '#f8f9fa', 'borderBottom': '2px solid #dee2e6'}),
 
 	# Dynamic container for all instrument sections
@@ -416,20 +484,23 @@ app.layout = html.Div([
 
 @app.callback(
 	Output('instruments-container', 'children'),
-	Input('interval', 'n_intervals')
+	Input('interval', 'n_intervals'),
+	Input('page-session', 'data')
 )
-def update_instruments_layout(n):
+def update_instruments_layout(n, page_session):
 	"""
 	Dynamically create and update instrument sections in the UI.
 	
 	This callback:
-	- Runs on every interval tick (500ms)
+	- Runs on every interval tick (2 second polling)
 	- Checks for new instruments in the data
-	- Creates new UI sections only when instruments change
-	- Avoids unnecessary layout updates for performance
+	- Creates new UI sections only when instruments actually change
+	- Minimizes layout updates to prevent flashing
+	- Handles page refresh by detecting early callback executions
 	
 	Args:
-		n (int): Number of interval ticks (unused but required by Dash)
+		n (int): Number of interval ticks
+		page_session (dict): Page session data for refresh detection
 		
 	Returns:
 		List[html.Div] or dash.no_update: List of instrument sections or no update
@@ -438,8 +509,11 @@ def update_instruments_layout(n):
 	instruments = get_instruments()
 	new_instruments = set(instruments)
 	
-	# Only update layout if instruments have changed to avoid unnecessary re-renders
-	if new_instruments == CURRENT_INSTRUMENTS:
+	# Only force rebuild on the very first callback (n == 0) or when page is truly refreshed
+	force_rebuild = (n == 0)
+	
+	# Only update layout if instruments have actually changed or we need to force rebuild
+	if not force_rebuild and new_instruments == CURRENT_INSTRUMENTS:
 		return dash.no_update
 	
 	CURRENT_INSTRUMENTS = new_instruments
@@ -475,7 +549,8 @@ def update_fields(n, current_value, component_id):
 	- Runs on every interval for each instrument independently
 	- Updates dropdown options based on available numeric fields
 	- Preserves selected fields when possible
-	- Automatically selects all fields for new instruments
+	- Minimizes updates to prevent flashing
+	- Only updates when field options actually change
 	
 	Args:
 		n (int): Number of interval ticks
@@ -496,13 +571,20 @@ def update_fields(n, current_value, component_id):
 	# Convert to dropdown options format
 	options = [{'label': f, 'value': f} for f in fields]
 	
-	if current_value:
-		# Preserve existing selections that are still valid
+	# If we have current_value and it's not empty, preserve it as much as possible
+	if current_value is not None and len(current_value) > 0:
+		# Keep existing selections that are still valid
 		new_value = [f for f in current_value if f in fields]
-		return options, new_value
+		# Only return new_value if it's not empty, otherwise fall back to all fields
+		if new_value:
+			return options, new_value
 	
-	# For new instruments, select all available fields by default
-	return options, fields
+	# For initial load or when no valid selections remain, select all fields
+	if fields:
+		return options, fields
+	else:
+		# No fields available yet
+		return options, []
 
 @app.callback(
 	Output({'type': 'display-store', 'instrument': dash.dependencies.MATCH}, 'data'),
@@ -606,7 +688,7 @@ def update_graph(selected_fields, n, paused, display_minutes, pause_ref_iso, com
 	
 	This is the main visualization callback that handles:
 	- Field selection and filtering
-	- Real-time data updates with pause/resume functionality
+	- Real-time data updates with pause/resume functionality (optimized to reduce flashing)
 	- Time window filtering (show last N minutes)
 	- Dual y-axis support
 	- Custom styling from configuration files
@@ -630,21 +712,39 @@ def update_graph(selected_fields, n, paused, display_minutes, pause_ref_iso, com
 	instrument = component_id['instrument']
 	# Filter out internal fields that shouldn't be displayed
 	selected_fields = [f for f in selected_fields if f != '_epoch_ms']
+	
+	# Check what triggered this callback to avoid unnecessary updates
+	trigger = None
+	try:
+		ctx = dash.callback_context
+		if ctx.triggered:
+			trigger = ctx.triggered[0].get('prop_id', '')
+	except Exception:
+		trigger = ''
+	
+	# If paused and triggered only by interval, don't update the graph
+	if paused and 'interval' in trigger:
+		return dash.no_update
+	
+	# If triggered only by interval and not the first few calls, limit update frequency
+	# Only update every 3rd interval call to reduce flashing (every 6 seconds instead of 2)
+	if 'interval' in trigger and n > 5 and n % 3 != 0:
+		return dash.no_update
+		
 	all_data = fetch_data()
 	data_points = all_data.get(instrument, [])
 	
-	# Pause functionality: prevent updates during pause state when triggered by interval
-	trigger = None
-	try:
-		trig = dash.callback_context.triggered
-		if trig:
-			trigger = trig[0].get('prop_id')
-	except Exception:
-		trigger = None
-		
-	# If paused and triggered by interval, don't update the graph
-	if paused and trigger and trigger.startswith('interval.'):
+	# Check if data has actually changed using hash comparison
+	global LAST_DATA_HASH
+	current_hash = get_data_hash(data_points, selected_fields)
+	last_hash = LAST_DATA_HASH.get(instrument, "")
+	
+	# If data hasn't changed and this is just an interval update, don't redraw
+	if 'interval' in trigger and current_hash == last_hash and current_hash != "":
 		return dash.no_update
+	
+	# Update the hash for future comparisons
+	LAST_DATA_HASH[instrument] = current_hash
 
 	# Time filtering logic
 	try:
@@ -833,6 +933,77 @@ def clear_data(n_clicks, component_id):
 		SEEN_KEYS.difference_update(keys_to_remove)
 		
 	return dash.no_update
+
+
+@app.callback(
+	Output('clear-all-output', 'children'),
+	Output('status-clear-timer', 'disabled'),
+	Input('clear-all-button', 'n_clicks')
+)
+def clear_all_data(n_clicks):
+	"""
+	Clear all cached data for all instruments globally.
+	
+	This callback handles the global "Clear All Data" button functionality:
+	- Removes all in-memory data points for all instruments
+	- Clears the entire seen keys cache
+	- Resets the current instruments tracking
+	- Provides user feedback on the operation
+	- Starts a timer to auto-clear the status message
+	
+	Args:
+		n_clicks (int): Number of times the clear all button was clicked
+		
+	Returns:
+		Tuple[str, bool]: Status message for the user, timer disabled state
+	"""
+	if not n_clicks:
+		return "", True
+		
+	global CURRENT_INSTRUMENTS, LAST_DATA_HASH
+	
+	with MEM_LOCK:
+		# Count how many instruments and keys we're clearing
+		num_instruments = len(MEMORY_POINTS)
+		num_keys = len(SEEN_KEYS)
+		
+		# Clear all in-memory data
+		MEMORY_POINTS.clear()
+		SEEN_KEYS.clear()
+		
+		# Reset UI state tracking
+		CURRENT_INSTRUMENTS.clear()
+		LAST_DATA_HASH.clear()
+	
+	if num_instruments > 0 or num_keys > 0:
+		message = f"✓ Cleared data for {num_instruments} instruments ({num_keys} keys)"
+	else:
+		message = "✓ No data to clear"
+	
+	# Return message and enable timer (disabled=False)
+	return message, False
+
+
+@app.callback(
+	Output('clear-all-output', 'children', allow_duplicate=True),
+	Output('status-clear-timer', 'disabled', allow_duplicate=True),
+	Input('status-clear-timer', 'n_intervals'),
+	prevent_initial_call=True
+)
+def clear_status_message(n_intervals):
+	"""
+	Auto-clear the status message after the timer interval.
+	
+	Args:
+		n_intervals (int): Number of timer intervals elapsed
+		
+	Returns:
+		Tuple[str, bool]: Empty message and disabled timer
+	"""
+	if n_intervals > 0:
+		# Clear message and disable timer
+		return "", True
+	return dash.no_update, dash.no_update
 
 
 # Application entry point
