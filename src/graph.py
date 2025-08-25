@@ -136,6 +136,8 @@ def get_numeric_fields_union(data_points):
 
 app = dash.Dash(__name__)
 
+_FONT_STACK = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+
 app.layout = html.Div([
 	# Header / controls area (fixed height)
 	html.Div([
@@ -179,7 +181,7 @@ app.layout = html.Div([
 		dcc.Graph(id='live-graph', style={'height': '100%', 'width': '100%'}),
 	], style={'flex': '1 1 auto', 'minHeight': 0}),
 
-], style={'display': 'flex', 'flexDirection': 'column', 'height': '100vh'})
+], style={'display': 'flex', 'flexDirection': 'column', 'height': '100vh', 'fontFamily': _FONT_STACK})
 
 @app.callback(
 	Output('fields-dropdown', 'options'),
