@@ -102,7 +102,7 @@ if redis-cli ping &> /dev/null; then
     response=$(redis-cli ping 2>/dev/null)
     if [ "$response" = "PONG" ]; then
         print_success "Redis server is ON and responding"
-        print_status "Redis is running on port 6379"
+        print_status "Redis is running"
         
         # Show Redis info
         echo ""
