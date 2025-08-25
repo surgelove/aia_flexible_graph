@@ -141,12 +141,12 @@ _FONT_STACK = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica
 app.layout = html.Div([
 	# Header / controls area (fixed height)
 	html.Div([
-		html.H2("Flexible Graph", style={'margin': 0}),
+		html.H2("Flexible Graph", style={'margin': 0, 'fontSize': '16px'}),
 		dcc.Interval(id='interval', interval=100, n_intervals=0),
 		# fields-dropdown moved below to occupy full width above the graph
 		# Display-window controls: choose a minutes window to display (does not delete data)
 		html.Div([
-			html.Label('Show last (minutes):', style={'marginRight': '6px'}),
+			html.Label('Show last (minutes):', style={'marginRight': '6px', 'fontSize': '12px'}),
 			dcc.Input(id='minutes-input', type='number', min=0, value=0, placeholder='0 = all', style={'width': '100px'}),
 			html.Button('Apply', id='apply-window-button', n_clicks=0, style={'marginLeft': '6px'}),
 		], style={'display': 'flex', 'alignItems': 'center'}),
@@ -158,8 +158,8 @@ app.layout = html.Div([
 		dcc.Store(id='pause-ref-store', data=None),
 		# hidden button toggled by spacebar via assets/space_toggle.js
 		html.Button(id='space-toggle-button', style={'display': 'none'}),
-		# visible pause/resume button for discoverability
-		html.Button('Pause/Resume', id='pause-toggle-visible', n_clicks=0, style={'marginLeft': '8px'}),
+	# visible pause/resume button for discoverability (default label = Pause)
+	html.Button('Pause', id='pause-toggle-visible', n_clicks=0, style={'marginLeft': '8px'}),
 		html.Button('Clear data', id='clear-button', n_clicks=0, style={'margin':'8px'}),
 		html.Div(id='clear-output', style={'color': 'green', 'marginBottom': '8px'}),
 		html.Div(id='display-window-output', style={'color': 'blue', 'marginBottom': '8px'}),
@@ -205,31 +205,29 @@ def update_fields(n, current_value):
 
 @app.callback(
 	Output('display-window-store', 'data'),
-	Output('display-window-output', 'children'),
 	Input('apply-window-button', 'n_clicks'),
 	State('minutes-input', 'value')
 )
 def apply_display_window(n_clicks, minutes_value):
-	"""Save the chosen display window in minutes into the Store and return a message.
+	"""Save the chosen display window in minutes into the Store.
 
-	This only affects what is shown in the graph; no data is deleted.
+	No UI message is displayed; the store is updated only.
 	"""
 	if not n_clicks:
-		# no change
-		return dash.no_update, ''
+		return dash.no_update
 	try:
 		minutes = float(minutes_value) if minutes_value is not None else 0
 	except Exception:
-		return dash.no_update, 'Invalid minutes value'
+		return dash.no_update
 	if minutes <= 0:
-		return 0, 'Display window cleared (showing all data)'
-	return minutes, f'Showing last {minutes:.1f} minutes (display-only)'
+		return 0
+	return minutes
 
 
 @app.callback(
 	Output('paused-store', 'data'),
 	Output('pause-ref-store', 'data'),
-	Output('pause-output', 'children'),
+	Output('pause-toggle-visible', 'children'),
 	Input('space-toggle-button', 'n_clicks'),
 	Input('pause-toggle-visible', 'n_clicks'),
 	State('paused-store', 'data')
@@ -238,9 +236,9 @@ def toggle_pause(n_space_clicks, n_visible_clicks, paused):
 	"""Toggle paused state. When pausing, capture the latest timestamp seen in MEMORY_POINTS
 	and store it in ISO format in `pause-ref-store`. When unpausing, clear the reference.
 	"""
-	# If neither button has been clicked yet, do nothing
+	# If neither button has been clicked yet, do nothing (don't overwrite initial label)
 	if not n_space_clicks and not n_visible_clicks:
-		return dash.no_update, dash.no_update, ''
+		return dash.no_update, dash.no_update, dash.no_update
 
 	# flip paused flag
 	new_paused = not bool(paused)
@@ -258,12 +256,13 @@ def toggle_pause(n_space_clicks, n_visible_clicks, paused):
 		if latest is not None:
 			# store as ISO-like string for safe transport
 			ref_iso = latest.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-			message = f'Paused display at {ref_iso}'
+			# button should indicate resume action when paused
+			button_label = 'Resume'
 		else:
-			message = 'Paused (no timestamp available)'
+			button_label = 'Resume'
 	else:
-		message = 'Resumed live display'
-	return new_paused, ref_iso, message
+		button_label = 'Pause'
+	return new_paused, ref_iso, button_label
 
 @app.callback(
 	Output('live-graph', 'figure'),
@@ -410,11 +409,11 @@ def clear_data(n_clicks):
 	avoids destructive remote operations.
 	"""
 	if not n_clicks:
-		return ''
+		return dash.no_update
 	with MEM_LOCK:
 		MEMORY_POINTS.clear()
 		SEEN_KEYS.clear()
-	return f"Cleared in-memory data ({len(MEMORY_POINTS)} points remain)."
+	return dash.no_update
 
 if __name__ == "__main__":
 	app.run(debug=True, port=8051)
