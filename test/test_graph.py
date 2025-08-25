@@ -132,7 +132,7 @@ class StockDataTester:
             # print(payload)
             
             # Use the same key pattern as your graph.py expects
-            key = f"price_data:USD_JPY:{int(time.time() * 1000)}"
+            key = f"price_data:FAKE_USD:{int(time.time() * 1000)}"
             
             # Send to Redis with TTL (5 seconds)
             self.redis_client.setex(key, 5, json.dumps(payload))
