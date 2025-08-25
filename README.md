@@ -1,119 +1,238 @@
-# aia_flexible_graph
+# AIA Flexible Graph
 
-Flexible, config-driven Dash app that visualizes live data from Redis with selectable fields, dual y-axes, and customizable styling and tooltips.
+A flexible, config-driven Dash application for visualizing live multi-instrument data from Redis with dynamic layouts, selectable fields, dual y-axes, and customizable styling.
 
 ## Overview
 
-The app reads JSON payloads from Redis keys matching `price_data:USD_JPY:*`, keeps a rolling in-memory history, and renders them in a Plotly graph. You can:
+This application automatically discovers and displays data for multiple instruments from Redis, creating a separate graph section for each instrument. The app:
 
-- Pick which numeric fields to display via a dropdown.
-- Map selected series to a secondary y-axis (y2) using `config/axes.json`.
-- Customize trace modes, marker styles, and line styles via `config/*.json`.
-- Configure hover tooltips via `config/tooltip.json`.
-
-The repository also includes two small utilities under `test/` to generate or manually inject test data into Redis while you view the graph.
+- Dynamically creates instrument sections as new data arrives
+- Provides independent field selection and controls for each instrument  
+- Supports dual y-axes, customizable trace styling, and configurable tooltips
+- Maintains rolling in-memory history beyond Redis TTL
+- Offers pause/resume and time-windowing controls per instrument
 
 ## Prerequisites
 
 - Python 3.8+
-- Redis running locally on `localhost:6379`
+- Redis server running on `localhost:6379`
 
-Install Python dependencies (example):
-
+Install dependencies:
+```bash
+pip install dash plotly redis
 ```
-pip3 install dash plotly redis
-```
 
-Start Redis on macOS (either works):
-
-```
-# Homebrew service (recommended)
+Start Redis:
+```bash
+# macOS with Homebrew
 brew services start redis
 
-# Or run directly (foreground)
+# Or run directly
 redis-server
 ```
 
-## Run the graph app
+## Quick Start
 
+1. Start the application:
+```bash
+python src/main.py
 ```
-python3 src/graph.py
+
+2. Open http://localhost:8051
+
+3. Send test data using the included utilities (see Test Utilities section)
+
+## Data Format
+
+The app reads JSON data from Redis keys following the pattern: `price_data:INSTRUMENT:TIMESTAMP`
+
+Example key: `price_data:EUR_USD:1640995200000`
+
+Example JSON payload:
+```json
+{
+  "timestamp": "2025-01-15T14:30:25.123",
+  "price": 1.0850,
+  "ema_short": 1.0845,
+  "ema_long": 1.0860,
+  "volume": 1250000,
+  "signal": "BULLISH_CROSS",
+  "description": "Strong upward momentum detected"
+}
 ```
 
-Then open http://localhost:8051.
+**Key Requirements:**
+- Keys must follow `price_data:INSTRUMENT:TIMESTAMP` pattern
+- JSON must include a `timestamp` field (ISO format preferred)
+- Numeric fields will automatically appear in the field selector
+- Each instrument gets its own section and controls
 
-Notes:
+## Features
 
-- The app polls Redis for keys named `price_data:USD_JPY:*` and stores recent points beyond Redis TTL (capped at 10,000).
-- The field dropdown auto-populates from numeric fields observed in the data.
-- A field will render on the right-hand axis if `config/axes.json` maps it to `"y2"`.
+### Multi-Instrument Support
+- Automatic instrument detection and section creation
+- Independent controls for each instrument
+- Alphabetically sorted instrument display
+
+### Per-Instrument Controls
+- **Field Selection**: Multi-select dropdown for numeric fields
+- **Time Windowing**: Show last N minutes of data
+- **Pause/Resume**: Freeze updates while maintaining data collection
+- **Clear Data**: Remove all cached data for an instrument
+
+### Visualization
+- Plotly-powered interactive graphs with full viewport sections
+- Configurable dual y-axes support
+- Custom hover tooltips with wrapped descriptions
+- Real-time updates (500ms polling interval)
 
 ## Configuration
 
-All configs live in the repository’s top-level `config/` folder and are loaded at startup:
+All configuration files are located in the `config/` directory and loaded at startup:
 
-- `axes.json`: Map field name to `"y"` or `"y2"` to place that series on the primary or secondary y-axis.
-- `modes.json`: Map field name to a Plotly scatter mode, e.g. `"lines"`, `"markers"`, `"lines+markers"`, etc.
-- `markers.json`: Per-field Plotly marker dict (e.g., `{ "size": 6, "color": "#1f77b4" }`).
-- `lines.json`: Per-field Plotly line dict (e.g., `{ "width": 2, "dash": "dot" }`).
-- `tooltip.json`: `{ "fields": ["timestamp", "price", "ema_short", ...] }` controls the order/content of hover text.
-
-Example minimal `axes.json` to place a field on y2:
-
-```
+### `config/axes.json` - Y-Axis Assignment
+Maps fields to primary (`y`) or secondary (`y2`) y-axis:
+```json
 {
-	"random_0_5": "y2"
+  "volume": "y2",
+  "rsi": "y2",
+  "price": "y",
+  "ema_short": "y"
 }
 ```
 
-## Data format (Redis values)
-
-Each key should have a JSON value similar to:
-
-```
+### `config/modes.json` - Display Modes
+Controls how each field is rendered:
+```json
 {
-	"timestamp": "YYYY-MM-DD HH:MM:SS.mmm",
-	"price": 150.1234,
-	"ema_short": 150.2345,
-	"ema_long": 150.3456,
-	"signal": "BULLISH_CROSS",        # optional
-	"description": "...",             # optional
-	"random_0_5": 3                    # optional example field
+  "price": "lines",
+  "volume": "markers",
+  "ema_short": "lines+markers"
 }
 ```
 
-Keys must follow the pattern `price_data:USD_JPY:<epoch_ms>`.
+Valid modes: `lines`, `markers`, `lines+markers`, `none`, `text`, `lines+text`, `markers+text`, `lines+markers+text`
 
-## Using the test utilities
-
-Two helpers under `test/` make it easy to feed data into Redis while you view the graph.
-
-### 1) Automated generator and streamer
-
-Runs a scenario that sends historical points and then streams live data; it also includes a signal-focused mode.
-
-```
-python3 test/test_graph.py
-```
-
-- Option 1 sends ~30 historical points, then starts live streaming. Open the graph at http://localhost:8051 to watch updates.
-- Option 2 sends a predefined price path to trigger EMA crossover signals.
-- Option 3 clears the matching Redis keys.
-
-### 2) Manual sender UI
-
-Launch a small Dash app that lets you craft payloads and submit them to Redis:
-
-```
-python3 test/test_graph_manual.py
+### `config/markers.json` - Marker Styling
+Customize marker appearance:
+```json
+{
+  "price": {
+    "size": 8,
+    "color": "#1f77b4",
+    "symbol": "circle"
+  },
+  "volume": {
+    "size": 6,
+    "color": "#ff7f0e",
+    "symbol": "square"
+  }
+}
 ```
 
-Open http://localhost:8052 to set timestamp, price, EMAs, optional fields, and TTL; hit Submit to send. Keep the main graph running to see updates.
+### `config/lines.json` - Line Styling
+Customize line appearance:
+```json
+{
+  "price": {
+    "width": 2,
+    "color": "#1f77b4"
+  },
+  "ema_short": {
+    "width": 1,
+    "dash": "dash",
+    "color": "#2ca02c"
+  }
+}
+```
+
+### `config/tooltip.json` - Hover Information
+Control tooltip content and order:
+```json
+{
+  "fields": [
+    "timestamp",
+    "price",
+    "ema_short", 
+    "ema_long",
+    "volume",
+    "signal",
+    "description"
+  ]
+}
+```
+
+## Test Utilities
+
+### Automated Data Generator
+Generate historical and live streaming data:
+```bash
+python test/test_graph.py
+```
+
+Options:
+1. **Historical + Live**: Sends ~30 historical points then streams live data
+2. **Signal Scenario**: Predefined price movements to trigger EMA crossovers  
+3. **Clear Data**: Remove all test keys from Redis
+
+### Manual Data Entry
+Interactive web interface for crafting custom payloads:
+```bash
+python test/test_graph_manual.py
+```
+
+Open http://localhost:8052 to manually create and submit data points with custom timestamps, prices, and optional fields.
+
+## Architecture
+
+### Data Flow
+1. **Polling**: App polls Redis every 500ms for `price_data:*:*` keys
+2. **Parsing**: Extracts instrument name and parses JSON payload
+3. **Storage**: Maintains in-memory history (max 10,000 points per instrument)
+4. **Display**: Creates dynamic layout with per-instrument sections
+
+### Memory Management
+- Rolling window of up to 10,000 points per instrument
+- Automatic cleanup of old data points
+- Efficient incremental updates (only new keys processed)
+
+### State Management
+- Per-instrument pause/resume state
+- Independent time window settings
+- Field selection preserved during updates
 
 ## Troubleshooting
 
-- No data on the graph? Ensure Redis is running and the test utility is sending keys: `redis-cli keys 'price_data:USD_JPY:*'`.
-- y2 axis not showing? Confirm `config/axes.json` exists at repo root and maps the field to `"y2"`. The app creates the right-hand axis only if any selected field is set to y2.
-- Hover text odd or too long? Adjust `config/tooltip.json` (the `description` field is wrapped for readability).
+**No instruments appearing?**
+- Verify Redis is running: `redis-cli ping`
+- Check for data keys: `redis-cli keys 'price_data:*'`
+- Run test utilities to generate sample data
+
+**Secondary y-axis not showing?**
+- Ensure `config/axes.json` exists and maps fields to `"y2"`
+- Verify the mapped fields are selected in the dropdown
+- Check that field names match exactly (case-sensitive)
+
+**Performance issues with large datasets?**
+- Data is capped at 10,000 points per instrument
+- Use time windowing to display only recent data
+- Consider pausing updates during intensive data loads
+
+**Hover tooltips too verbose?**
+- Adjust `config/tooltip.json` to include only needed fields
+- Description fields are automatically wrapped at 60 characters
+
+## Development
+
+The application uses:
+- **Dash**: Web framework with reactive callbacks
+- **Plotly**: Interactive plotting library
+- **Redis**: In-memory data store
+- **Pattern-matching callbacks**: For dynamic multi-instrument support
+
+Key files:
+- `src/main.py`: Main application with multi-instrument layout
+- `config/*.json`: Configuration files for styling and behavior
+- `test/`: Utilities for generating test data
 
 
