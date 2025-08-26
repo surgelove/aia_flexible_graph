@@ -262,6 +262,28 @@ def fetch_data():
 			
 			# Parse the JSON payload
 			dp = json.loads(raw)
+
+			# Coerce numeric-looking string values into numbers so fields like
+			# "price": "1.38373" are treated as numeric by plotting logic.
+			for k, v in list(dp.items()):
+				if k == 'timestamp':
+					continue
+				# If value is a string that looks like a number, convert to float/int
+				if isinstance(v, str):
+					v_str = v.strip()
+					# try int first, then float
+					try:
+						iv = int(v_str)
+						dp[k] = iv
+						continue
+					except Exception:
+						pass
+					try:
+						fv = float(v_str)
+						dp[k] = fv
+					except Exception:
+						# leave as string
+						pass
 			
 			# Normalize timestamp format - try multiple parsing strategies
 			# Parse timestamp: prefer ISO formats (with 'T' and optional timezone),
