@@ -464,6 +464,9 @@ app.layout = html.Div([
 		# Title and global controls row
 		html.Div([
 			html.H2("Flexible Graph - Multi Instrument", style={'margin': 0, 'fontSize': '20px', 'flex': '1'}),
+			# Redis pattern textbox + apply button (allows changing REDIS_KEY_PATTERN at runtime)
+			dcc.Input(id='redis-pattern-input', type='text', value=REDIS_KEY_PATTERN, style={'width': '280px', 'marginRight': '8px'}),
+			html.Button('Apply', id='redis-pattern-apply', n_clicks=0, style={'marginRight': '12px'}),
 			# Global clear all button
 			html.Button(
 				'Clear All Data', 
@@ -486,6 +489,8 @@ app.layout = html.Div([
 		
 		# Status output for global clear operation
 		html.Div(id='clear-all-output', style={'color': 'green', 'fontSize': '12px', 'textAlign': 'center'}),
+		# Status output for redis pattern apply
+		html.Div(id='redis-pattern-output', style={'color': 'green', 'fontSize': '12px', 'textAlign': 'center', 'marginTop': '6px'}),
 		
 		# Timer interval for auto-clearing status messages
 		dcc.Interval(id='status-clear-timer', interval=3000, n_intervals=0, disabled=True),
@@ -554,6 +559,36 @@ def update_instruments_layout(n, page_session):
 		sections.append(section)
 	
 	return sections
+
+
+# Callback to apply a new Redis key pattern from the UI
+@app.callback(
+	Output('redis-pattern-output', 'children'),
+	Input('redis-pattern-apply', 'n_clicks'),
+	State('redis-pattern-input', 'value'),
+)
+def apply_redis_pattern(n_clicks, pattern_value):
+	"""
+	Apply a new Redis key pattern at runtime and clear caches dependent on it.
+	"""
+	global REDIS_KEY_PATTERN, SEEN_KEYS, CURRENT_INSTRUMENTS, LAST_DATA_HASH
+
+	if not n_clicks:
+		return dash.no_update
+
+	if not pattern_value or not isinstance(pattern_value, str):
+		return "Invalid pattern"
+
+	REDIS_KEY_PATTERN = pattern_value
+
+	# Clear caches so new pattern takes effect immediately
+	with MEM_LOCK:
+		SEEN_KEYS.clear()
+		MEMORY_POINTS.clear()
+		CURRENT_INSTRUMENTS.clear()
+		LAST_DATA_HASH.clear()
+
+	return f"Applied pattern: {html_escape(REDIS_KEY_PATTERN)}"
 
 # Pattern-matching callbacks for dynamic instrument interactions
 @app.callback(
