@@ -2,5 +2,7 @@
   "price": "lines",
   "spread_pips": "lines",
   "ask": "lines",
-  "bid": "lines"
+  "bid": "lines",
+  "aspr_min_price": "markers",
+  "aspr_max_price": "markers"
 }

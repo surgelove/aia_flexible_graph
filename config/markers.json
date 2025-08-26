@@ -17,5 +17,15 @@
     "symbol": "circle",
     "size": 2,
     "color": "black"
+  },
+  "aspr_min_price": {
+    "symbol": "circle",
+    "size": 1,
+    "color": "green"
+  },
+  "aspr_max_price": {
+    "symbol": "circle",
+    "size": 1,
+    "color": "red"
   }
 }

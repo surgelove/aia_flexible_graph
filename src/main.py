@@ -638,6 +638,10 @@ def update_fields(n, current_value, component_id):
 	
 	# For initial load or when no valid selections remain, select all fields
 	if fields:
+		# Default to showing only the 'price' field when available to reduce
+		# visual clutter. If 'price' is not present, fall back to selecting all fields.
+		if 'price' in fields:
+			return options, ['price']
 		return options, fields
 	else:
 		# No fields available yet

@@ -23,5 +23,16 @@
     "width": 1,
     "dash": null,
     "color": "pink"
+  },
+  "base_ema": {
+    "width": 1,
+    "dash": null,
+    "color": "blue"
+  },
+  "base_tema": {
+    "width": 1,
+    "dash": null,
+    "color": "purple"
   }
+
 }

@@ -1,5 +1,5 @@
 {
-  "redis_key_pattern": "signals:*:*",
+  "redis_key_pattern": "algos:*:*",
   "app_port": 8051,
   "redis_port": 6379
 }

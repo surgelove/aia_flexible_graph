@@ -1,3 +1,14 @@
 {
-    "spread_pips": "y2"
+    "spread_pips": "y2",
+    "base_direction": "y2",
+    "base_mamplitude": "y2",
+    "base_pamplitude": "y2",
+    "base_signal": "y2",
+    "peak_direction": "y2",
+    "peak_pamplitude": "y2",
+    "peak_signal": "y2",
+    "peak_tamplitude": "y2",
+    "temp_value_1": "y2",
+    "temp_value_2": "y2",
+    "temp_value_3": "y2"
 }
