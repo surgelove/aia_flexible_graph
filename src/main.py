@@ -588,7 +588,7 @@ def apply_redis_pattern(n_clicks, pattern_value):
 		CURRENT_INSTRUMENTS.clear()
 		LAST_DATA_HASH.clear()
 
-	return f"Applied pattern: {html_escape(REDIS_KEY_PATTERN)}"
+	return None #f"Applied pattern: {html_escape(REDIS_KEY_PATTERN)}"
 
 # Pattern-matching callbacks for dynamic instrument interactions
 @app.callback(
