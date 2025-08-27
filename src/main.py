@@ -21,6 +21,7 @@ import datetime
 import os
 import hashlib
 from threading import Lock
+import threading
 import textwrap
 from html import escape as html_escape
 
@@ -30,6 +31,8 @@ from dash import dcc, html
 from dash.dependencies import Input, Output, State
 import plotly.graph_objs as go
 import redis
+
+import aia_utiilities_test
 
 # Configuration directory resolution
 # Resolve config directory at repo root (../config relative to this file)
@@ -126,8 +129,157 @@ def get_data_hash(data_points, selected_fields):
 	data_str = json.dumps(hash_data, sort_keys=True, default=str)
 	return hashlib.md5(data_str.encode()).hexdigest()
 
-# Redis connection
+# Redis connection / utilities
 redis_client = redis.Redis(host='localhost', port=REDIS_PORT, db=0, decode_responses=True)
+
+# Prefer the project's Redis utilities wrapper when available
+try:
+	redis_utils = aia_utiilities_test.Redis_Utilities(host='localhost', port=REDIS_PORT, db=0)
+except Exception:
+	redis_utils = None
+
+# Track seen entry fingerprints to avoid duplicates between read_all and read_each
+SEEN_HASH = set()
+
+# Background consumer thread reference
+_READ_EACH_THREAD = None
+
+
+def _fingerprint_entry(dp: dict) -> str:
+	"""Create a stable fingerprint for a payload dict to detect duplicates."""
+	try:
+		s = json.dumps(dp, sort_keys=True, default=str)
+		return hashlib.md5(s.encode()).hexdigest()
+	except Exception:
+		return str(hash(frozenset(dp.items())))
+
+
+def _process_and_store(dp: dict) -> None:
+	"""Normalize a payload dict and store it into MEMORY_POINTS under its instrument."""
+	if not isinstance(dp, dict):
+		return
+
+	# Determine instrument from payload
+	instrument = None
+	for key_name in ('instrument', 'symbol', 'instr'):
+		if key_name in dp and isinstance(dp[key_name], str):
+			instrument = dp[key_name]
+			break
+	if not instrument:
+		# Can't associate this payload with an instrument
+		return
+
+	# Coerce numeric-like strings
+	for k, v in list(dp.items()):
+		if k == 'timestamp' or k == 'instrument':
+			continue
+		if isinstance(v, str):
+			v_str = v.strip()
+			try:
+				dp[k] = int(v_str)
+				continue
+			except Exception:
+				pass
+			try:
+				dp[k] = float(v_str)
+			except Exception:
+				pass
+
+	# Normalize timestamp
+	ts_raw = dp.get('timestamp')
+	if isinstance(ts_raw, str):
+		try:
+			dp['timestamp'] = datetime.datetime.fromisoformat(ts_raw)
+		except Exception:
+			try:
+				dp['timestamp'] = datetime.datetime.strptime(ts_raw, '%Y-%m-%d %H:%M:%S.%f')
+			except Exception:
+				try:
+					dp['timestamp'] = datetime.datetime.strptime(ts_raw, '%Y-%m-%d %H:%M:%S')
+				except Exception:
+					dp['timestamp'] = None
+
+	# Compute epoch ms when possible
+	try:
+		ts = dp.get('timestamp')
+		if isinstance(ts, datetime.datetime):
+			dp['_epoch_ms'] = int(ts.timestamp() * 1000)
+		else:
+			dp['_epoch_ms'] = dp.get('_epoch_ms', 0)
+	except Exception:
+		dp['_epoch_ms'] = dp.get('_epoch_ms', 0)
+
+	# Store in-memory
+	with MEM_LOCK:
+		if instrument not in MEMORY_POINTS:
+			MEMORY_POINTS[instrument] = []
+		MEMORY_POINTS[instrument].append(dp)
+		# Trim
+		if len(MEMORY_POINTS[instrument]) > MAX_POINTS:
+			MEMORY_POINTS[instrument].sort(key=lambda x: (x.get('timestamp'), x.get('_epoch_ms', 0)))
+			del MEMORY_POINTS[instrument][:-MAX_POINTS]
+
+
+def initialize_from_read_all(pattern: str = None):
+	"""Load all existing entries matching pattern using redis_utils.read_all.
+
+	This function populates MEMORY_POINTS and SEEN_HASH.
+	"""
+	if redis_utils is None:
+		return
+
+	pat = pattern or REDIS_KEY_PATTERN
+	try:
+		entries = redis_utils.read_all(pat)
+	except Exception:
+		entries = []
+
+	# Clear current memory and seen hashes before initializing
+	with MEM_LOCK:
+		MEMORY_POINTS.clear()
+		SEEN_HASH.clear()
+
+	for dp in entries:
+		if not isinstance(dp, dict):
+			continue
+		fp = _fingerprint_entry(dp)
+		if fp in SEEN_HASH:
+			continue
+		_process_and_store(dp)
+		SEEN_HASH.add(fp)
+
+
+def _start_read_each_consumer(pattern: str = None):
+	"""Start background thread consuming new entries via redis_utils.read_each.
+
+	The consumer derives a prefix from the pattern and yields new entries.
+	Duplicate payloads are filtered using SEEN_HASH.
+	"""
+	global _READ_EACH_THREAD
+	if redis_utils is None:
+		return
+	if _READ_EACH_THREAD is not None and _READ_EACH_THREAD.is_alive():
+		return
+
+	# Derive prefix for read_each: take everything before first '*' and strip trailing ':'
+	pat = pattern or REDIS_KEY_PATTERN
+	prefix = pat.split('*')[0].rstrip(':')
+
+	def consumer():
+		try:
+			for dp in redis_utils.read_each(prefix):
+				if not isinstance(dp, dict):
+					continue
+				fp = _fingerprint_entry(dp)
+				if fp in SEEN_HASH:
+					continue
+				_process_and_store(dp)
+				SEEN_HASH.add(fp)
+		except Exception:
+			return
+
+	_READ_EACH_THREAD = threading.Thread(target=consumer, daemon=True)
+	_READ_EACH_THREAD.start()
 
 # Global data storage and synchronization
 # In-memory history to keep received data beyond Redis TTL per instrument
@@ -223,109 +375,14 @@ def fetch_data():
 	Thread Safety:
 		Uses MEM_LOCK to ensure thread-safe access to shared data structures
 	"""
-	# Scan Redis for keys matching the configured pattern
-	keys = redis_client.keys(REDIS_KEY_PATTERN)
-	
-	# Only fetch new keys to avoid re-adding duplicates
-	new_keys = [k for k in keys if k not in SEEN_KEYS]
-	
-	for key in new_keys:
-		# Attempt to retrieve the data for this key
-		raw = redis_client.get(key)
-		if not raw:
-			# Mark as seen even if empty to avoid repeated attempts
-			SEEN_KEYS.add(key)
-			continue
-			
+	# Ensure we have an initial snapshot loaded via redis_utils.read_all when available
+	if redis_utils is not None and not MEMORY_POINTS:
 		try:
-			# Extract instrument name from key using the configured pattern
-			# For pattern "price_data:*:*", split by ':' and take the second part
-			pattern_parts = REDIS_KEY_PATTERN.split('*')
-			if len(pattern_parts) >= 2:
-				prefix = pattern_parts[0]
-				# Remove prefix and split to get instrument
-				key_without_prefix = key[len(prefix):]
-				instrument_and_rest = key_without_prefix.split(':', 1)
-				if instrument_and_rest:
-					instrument = instrument_and_rest[0]
-				else:
-					SEEN_KEYS.add(key)
-					continue
-			else:
-				# Fallback for malformed pattern - assume price_data:INSTRUMENT:timestamp
-				key_parts = key.split(':')
-				if len(key_parts) >= 3:
-					instrument = key_parts[1]
-				else:
-					SEEN_KEYS.add(key)
-					continue
-			
-			# Parse the JSON payload
-			dp = json.loads(raw)
-
-			# Coerce numeric-looking string values into numbers so fields like
-			# "price": "1.38373" are treated as numeric by plotting logic.
-			for k, v in list(dp.items()):
-				if k == 'timestamp':
-					continue
-				# If value is a string that looks like a number, convert to float/int
-				if isinstance(v, str):
-					v_str = v.strip()
-					# try int first, then float
-					try:
-						iv = int(v_str)
-						dp[k] = iv
-						continue
-					except Exception:
-						pass
-					try:
-						fv = float(v_str)
-						dp[k] = fv
-					except Exception:
-						# leave as string
-						pass
-			
-			# Normalize timestamp format - try multiple parsing strategies
-			# Parse timestamp: prefer ISO formats (with 'T' and optional timezone),
-			# fall back to older space-separated formats.
-			ts_raw = dp.get('timestamp')
-			if isinstance(ts_raw, str):
-				# Try ISO format first (handles '2025-08-25T11:52:32.755024' and offsets)
-				try:
-					dp['timestamp'] = datetime.datetime.fromisoformat(ts_raw)
-				except Exception:
-					# Fall back to space-separated format with microseconds
-					try:
-						dp['timestamp'] = datetime.datetime.strptime(ts_raw, '%Y-%m-%d %H:%M:%S.%f')
-					except Exception:
-						# Fall back to space-separated format without microseconds
-						dp['timestamp'] = datetime.datetime.strptime(ts_raw, '%Y-%m-%d %H:%M:%S')
-			else:
-				# Leave as-is (later checks will ignore non-datetime entries)
-				pass
-				
-			# Extract numeric epoch from key suffix to use as a stable secondary sort key
-			# This ensures consistent ordering even when timestamps are identical
-			try:
-				dp['_epoch_ms'] = int(key.rsplit(':', 1)[-1])
-			except Exception:
-				dp['_epoch_ms'] = 0
-				
-			# Thread-safe update of in-memory storage
-			with MEM_LOCK:
-				if instrument not in MEMORY_POINTS:
-					MEMORY_POINTS[instrument] = []
-				MEMORY_POINTS[instrument].append(dp)
-				SEEN_KEYS.add(key)
-				
-				# Trim data if above maximum limit (after sorting by timestamp + epoch)
-				if len(MEMORY_POINTS[instrument]) > MAX_POINTS:
-					MEMORY_POINTS[instrument].sort(key=lambda x: (x.get('timestamp'), x.get('_epoch_ms', 0)))
-					del MEMORY_POINTS[instrument][:-MAX_POINTS]
+			initialize_from_read_all(REDIS_KEY_PATTERN)
+			# start background consumer to receive new keys
+			_start_read_each_consumer(REDIS_KEY_PATTERN)
 		except Exception:
-			# Mark as seen even if parsing failed to avoid repeated attempts
-			SEEN_KEYS.add(key)
-			continue
+			pass
 			
 	# Return sorted snapshots of memory for all instruments
 	with MEM_LOCK:
@@ -587,6 +644,14 @@ def apply_redis_pattern(n_clicks, pattern_value):
 		MEMORY_POINTS.clear()
 		CURRENT_INSTRUMENTS.clear()
 		LAST_DATA_HASH.clear()
+
+	# Re-initialize from redis using the utilities and start the streaming consumer
+	try:
+		initialize_from_read_all(REDIS_KEY_PATTERN)
+		_start_read_each_consumer(REDIS_KEY_PATTERN)
+	except Exception:
+		# Ignore errors here; caller already cleared caches
+		pass
 
 	return None #f"Applied pattern: {html_escape(REDIS_KEY_PATTERN)}"
 
