@@ -636,12 +636,12 @@ def update_fields(n, current_value, component_id):
 		if new_value:
 			return options, new_value
 	
-	# For initial load or when no valid selections remain, select all fields
+	# For initial load or when no valid selections remain, select preferred fields
 	if fields:
-		# Default to showing only the 'price' field when available to reduce
-		# visual clutter. If 'price' is not present, fall back to selecting all fields.
-		if 'price' in fields:
-			return options, ['price']
+		# Prefer showing price, base_ema, base_tema when available
+		preferred = [f for f in ('price', 'base_ema', 'base_tema') if f in fields]
+		if preferred:
+			return options, preferred
 		return options, fields
 	else:
 		# No fields available yet
