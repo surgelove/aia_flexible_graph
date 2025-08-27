@@ -32,7 +32,11 @@ import plotly.graph_objs as go
 import redis
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 import aia_utiilities_test as au
+=======
+import aia_utiilities_test
+>>>>>>> parent of 3ecbc06 (Alias aia_utilities_test)
 
 =======
 >>>>>>> parent of d02ba1e (Use aia_utilities)
@@ -137,7 +141,7 @@ redis_client = redis.Redis(host='localhost', port=REDIS_PORT, db=0, decode_respo
 <<<<<<< HEAD
 # Prefer the project's Redis utilities wrapper when available
 try:
-	redis_utils = au.Redis_Utilities(host='localhost', port=REDIS_PORT, db=0)
+	redis_utils = aia_utiilities_test.Redis_Utilities(host='localhost', port=REDIS_PORT, db=0)
 except Exception:
 	redis_utils = None
 
