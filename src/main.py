@@ -21,7 +21,6 @@ import datetime
 import os
 import hashlib
 from threading import Lock
-import threading
 import textwrap
 from html import escape as html_escape
 
@@ -32,8 +31,11 @@ from dash.dependencies import Input, Output, State
 import plotly.graph_objs as go
 import redis
 
+<<<<<<< HEAD
 import aia_utiilities_test as au
 
+=======
+>>>>>>> parent of d02ba1e (Use aia_utilities)
 # Configuration directory resolution
 # Resolve config directory at repo root (../config relative to this file)
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -129,9 +131,10 @@ def get_data_hash(data_points, selected_fields):
 	data_str = json.dumps(hash_data, sort_keys=True, default=str)
 	return hashlib.md5(data_str.encode()).hexdigest()
 
-# Redis connection / utilities
+# Redis connection
 redis_client = redis.Redis(host='localhost', port=REDIS_PORT, db=0, decode_responses=True)
 
+<<<<<<< HEAD
 # Prefer the project's Redis utilities wrapper when available
 try:
 	redis_utils = au.Redis_Utilities(host='localhost', port=REDIS_PORT, db=0)
@@ -281,6 +284,8 @@ def _start_read_each_consumer(pattern: str = None):
 	_READ_EACH_THREAD = threading.Thread(target=consumer, daemon=True)
 	_READ_EACH_THREAD.start()
 
+=======
+>>>>>>> parent of d02ba1e (Use aia_utilities)
 # Global data storage and synchronization
 # In-memory history to keep received data beyond Redis TTL per instrument
 MEMORY_POINTS = {}  # Dict[str, List[dict]] - keyed by instrument name
@@ -375,14 +380,109 @@ def fetch_data():
 	Thread Safety:
 		Uses MEM_LOCK to ensure thread-safe access to shared data structures
 	"""
-	# Ensure we have an initial snapshot loaded via redis_utils.read_all when available
-	if redis_utils is not None and not MEMORY_POINTS:
+	# Scan Redis for keys matching the configured pattern
+	keys = redis_client.keys(REDIS_KEY_PATTERN)
+	
+	# Only fetch new keys to avoid re-adding duplicates
+	new_keys = [k for k in keys if k not in SEEN_KEYS]
+	
+	for key in new_keys:
+		# Attempt to retrieve the data for this key
+		raw = redis_client.get(key)
+		if not raw:
+			# Mark as seen even if empty to avoid repeated attempts
+			SEEN_KEYS.add(key)
+			continue
+			
 		try:
-			initialize_from_read_all(REDIS_KEY_PATTERN)
-			# start background consumer to receive new keys
-			_start_read_each_consumer(REDIS_KEY_PATTERN)
+			# Extract instrument name from key using the configured pattern
+			# For pattern "price_data:*:*", split by ':' and take the second part
+			pattern_parts = REDIS_KEY_PATTERN.split('*')
+			if len(pattern_parts) >= 2:
+				prefix = pattern_parts[0]
+				# Remove prefix and split to get instrument
+				key_without_prefix = key[len(prefix):]
+				instrument_and_rest = key_without_prefix.split(':', 1)
+				if instrument_and_rest:
+					instrument = instrument_and_rest[0]
+				else:
+					SEEN_KEYS.add(key)
+					continue
+			else:
+				# Fallback for malformed pattern - assume price_data:INSTRUMENT:timestamp
+				key_parts = key.split(':')
+				if len(key_parts) >= 3:
+					instrument = key_parts[1]
+				else:
+					SEEN_KEYS.add(key)
+					continue
+			
+			# Parse the JSON payload
+			dp = json.loads(raw)
+
+			# Coerce numeric-looking string values into numbers so fields like
+			# "price": "1.38373" are treated as numeric by plotting logic.
+			for k, v in list(dp.items()):
+				if k == 'timestamp':
+					continue
+				# If value is a string that looks like a number, convert to float/int
+				if isinstance(v, str):
+					v_str = v.strip()
+					# try int first, then float
+					try:
+						iv = int(v_str)
+						dp[k] = iv
+						continue
+					except Exception:
+						pass
+					try:
+						fv = float(v_str)
+						dp[k] = fv
+					except Exception:
+						# leave as string
+						pass
+			
+			# Normalize timestamp format - try multiple parsing strategies
+			# Parse timestamp: prefer ISO formats (with 'T' and optional timezone),
+			# fall back to older space-separated formats.
+			ts_raw = dp.get('timestamp')
+			if isinstance(ts_raw, str):
+				# Try ISO format first (handles '2025-08-25T11:52:32.755024' and offsets)
+				try:
+					dp['timestamp'] = datetime.datetime.fromisoformat(ts_raw)
+				except Exception:
+					# Fall back to space-separated format with microseconds
+					try:
+						dp['timestamp'] = datetime.datetime.strptime(ts_raw, '%Y-%m-%d %H:%M:%S.%f')
+					except Exception:
+						# Fall back to space-separated format without microseconds
+						dp['timestamp'] = datetime.datetime.strptime(ts_raw, '%Y-%m-%d %H:%M:%S')
+			else:
+				# Leave as-is (later checks will ignore non-datetime entries)
+				pass
+				
+			# Extract numeric epoch from key suffix to use as a stable secondary sort key
+			# This ensures consistent ordering even when timestamps are identical
+			try:
+				dp['_epoch_ms'] = int(key.rsplit(':', 1)[-1])
+			except Exception:
+				dp['_epoch_ms'] = 0
+				
+			# Thread-safe update of in-memory storage
+			with MEM_LOCK:
+				if instrument not in MEMORY_POINTS:
+					MEMORY_POINTS[instrument] = []
+				MEMORY_POINTS[instrument].append(dp)
+				SEEN_KEYS.add(key)
+				
+				# Trim data if above maximum limit (after sorting by timestamp + epoch)
+				if len(MEMORY_POINTS[instrument]) > MAX_POINTS:
+					MEMORY_POINTS[instrument].sort(key=lambda x: (x.get('timestamp'), x.get('_epoch_ms', 0)))
+					del MEMORY_POINTS[instrument][:-MAX_POINTS]
 		except Exception:
-			pass
+			# Mark as seen even if parsing failed to avoid repeated attempts
+			SEEN_KEYS.add(key)
+			continue
 			
 	# Return sorted snapshots of memory for all instruments
 	with MEM_LOCK:
@@ -644,14 +744,6 @@ def apply_redis_pattern(n_clicks, pattern_value):
 		MEMORY_POINTS.clear()
 		CURRENT_INSTRUMENTS.clear()
 		LAST_DATA_HASH.clear()
-
-	# Re-initialize from redis using the utilities and start the streaming consumer
-	try:
-		initialize_from_read_all(REDIS_KEY_PATTERN)
-		_start_read_each_consumer(REDIS_KEY_PATTERN)
-	except Exception:
-		# Ignore errors here; caller already cleared caches
-		pass
 
 	return None #f"Applied pattern: {html_escape(REDIS_KEY_PATTERN)}"
 
