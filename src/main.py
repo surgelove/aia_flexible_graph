@@ -32,7 +32,7 @@ from dash.dependencies import Input, Output, State
 import plotly.graph_objs as go
 import redis
 
-import aia_utiilities_test
+import aia_utiilities_test as au
 
 # Configuration directory resolution
 # Resolve config directory at repo root (../config relative to this file)
@@ -134,7 +134,7 @@ redis_client = redis.Redis(host='localhost', port=REDIS_PORT, db=0, decode_respo
 
 # Prefer the project's Redis utilities wrapper when available
 try:
-	redis_utils = aia_utiilities_test.Redis_Utilities(host='localhost', port=REDIS_PORT, db=0)
+	redis_utils = au.Redis_Utilities(host='localhost', port=REDIS_PORT, db=0)
 except Exception:
 	redis_utils = None
 
