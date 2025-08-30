@@ -4,5 +4,7 @@
   "ask": "lines",
   "bid": "lines",
   "aspr_min_price": "markers",
-  "aspr_max_price": "markers"
+  "aspr_max_price": "markers",
+  "base_signal": "markers",
+  "base_cross_price": "markers"
 }

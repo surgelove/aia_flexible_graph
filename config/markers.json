@@ -27,5 +27,15 @@
     "symbol": "circle",
     "size": 1,
     "color": "red"
+  },
+  "base_signal": {
+    "symbol": "diamond",
+    "size": 6,
+    "color": "black"
+  },
+  "base_cross_price": {
+    "symbol": "cross",
+    "size": 6,
+    "color": "black"
   }
 }
